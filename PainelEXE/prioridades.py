@@ -19,49 +19,42 @@ except NameError:
     script_dir = os.getcwd()
 
 CAMINHO_PASTA_EXCEL = os.path.join(script_dir, "dados")
-NOME_ARQUIVO_PRIORIDADES = "Fila_de_prioridades_do_laboratorio.xlsx"
 NOME_ARQUIVO_STATUS = "Status_dos_pedidos.xlsx"
-CAMINHO_PLANILHA_PRIORIDADES = os.path.join(CAMINHO_PASTA_EXCEL, NOME_ARQUIVO_PRIORIDADES)
 CAMINHO_PLANILHA_STATUS = os.path.join(CAMINHO_PASTA_EXCEL, NOME_ARQUIVO_STATUS)
 
 # --- Nomes das colunas ---
-# Removidas as colunas do arquivo de prioridades para evitar o erro
 COLUNA_PEDIDO_ID_STATUS = 'Pedido'
 COLUNA_STATUS = 'Status'
 
 # --- Constantes de Status ---
 STATUS_PENDENTE = 'Pendente'
 STATUS_AGUARDANDO = 'Aguardando Montagem'
+STATUS_AGUARDANDO_CHEGADA = 'Aguardando Chegada'
 STATUS_EM_MONTAGEM = 'Em Montagem'
 STATUS_CONCLUIDO = 'Concluído'
 STATUS_CANCELADO = 'Cancelado'
 
 INTERVALO_CHECK_MS = 3000
 
-# --- LÓGICA DE DADOS (MODIFICADA PARA USAR SÓ A PLANILHA DE STATUS) ---
+# --- LÓGICA DE DADOS (SIMPLIFICADA) ---
 def carregar_e_mesclar_dados():
     if not os.path.exists(CAMINHO_PLANILHA_STATUS):
         raise FileNotFoundError(f"Arquivo de status não encontrado: {CAMINHO_PLANILHA_STATUS}")
 
-    # 1. Lê a planilha de STATUS, que agora é a única fonte de dados principal.
     df_status = pd.read_excel(CAMINHO_PLANILHA_STATUS)
+    df_status.columns = df_status.columns.str.strip()
     
-    # Renomeia a coluna de pedido para um nome padrão 'Pedido'
     df_status.rename(columns={COLUNA_PEDIDO_ID_STATUS: 'Pedido'}, inplace=True)
     df_status['Pedido'] = df_status['Pedido'].astype(str)
     df_status = df_status[df_status['Pedido'].str.startswith('CV-')].copy()
 
-    # 2. Define a prioridade P# com base na ordem da planilha
     df_status.reset_index(drop=True, inplace=True)
     df_status['Prioridade'] = df_status.index + 1
 
-    # 3. Adiciona colunas de detalhes vazias para que a interface não quebre
-    df_status['Data Entrega Prorrogada'] = pd.NaT
     df_status['Servico'] = "Detalhe não encontrado"
     df_status['CodItem'] = "N/A"
     df_status['Maquinas'] = 0
     
-    # 4. Remove os concluídos e cancelados
     df_final = df_status[~df_status[COLUNA_STATUS].isin([STATUS_CONCLUIDO, STATUS_CANCELADO])].copy()
 
     return df_final
@@ -75,6 +68,7 @@ STYLESHEET = """
     #TopPrioLabel { color: #FF6600; border-bottom: 2px solid #FF6600; padding-bottom: 5px; margin-bottom: 5px;}
     #SectionLabel { color: #3498DB; border-bottom: 2px solid #3498DB; padding-bottom: 5px; margin-bottom: 5px;}
     #PendenteLabel { color: #D4AC0D; border-bottom: 2px solid #D4AC0D; padding-bottom: 5px; margin-bottom: 5px;}
+    #AguardandoChegadaLabel { color: #9B59B6; border-bottom: 2px solid #9B59B6; padding-bottom: 5px; margin-bottom: 5px;}
     #Card {
         background-color: #2E2E2E; border: 1px solid #FF6600;
         border-radius: 10px; padding: 15px;
@@ -99,7 +93,7 @@ class PainelMtec(QMainWindow):
         except locale.Error:
             print("Aviso: Local 'pt_BR.UTF-8' não encontrado.")
         self.dados_df = pd.DataFrame()
-        self.timestamp_prioridades, self.timestamp_status = 0, 0
+        self.timestamp_status = 0
         self.setup_ui()
         self.atualizar_dados_e_ui()
         self.timer = QTimer(self)
@@ -179,15 +173,18 @@ class PainelMtec(QMainWindow):
         
         df_pendentes = self.dados_df[self.dados_df['Status'] == STATUS_PENDENTE]
         df_aguardando = self.dados_df[self.dados_df['Status'] == STATUS_AGUARDANDO]
+        df_aguardando_chegada = self.dados_df[self.dados_df['Status'] == STATUS_AGUARDANDO_CHEGADA]
         df_para_cards = self.dados_df[self.dados_df['Status'].isin([STATUS_AGUARDANDO, STATUS_EM_MONTAGEM])]
         
-        self.desenhar_lista_esquerda(df_para_cards, df_pendentes, df_aguardando)
+        self.desenhar_lista_esquerda(df_para_cards, df_pendentes, df_aguardando, df_aguardando_chegada)
         self.desenhar_cards_direita(df_para_cards)
 
-    def desenhar_lista_esquerda(self, df_para_cards, df_pendentes, df_aguardando):
-        top4_label = QLabel("TOP 4 PRIORIDADES")
+    # << ALTERAÇÃO: Reordenada a exibição das listas
+    def desenhar_lista_esquerda(self, df_para_cards, df_pendentes, df_aguardando, df_aguardando_chegada):
+        # 1. PRIORIDADES
+        top4_label = QLabel("PRIORIDADES")
         top4_label.setObjectName("TopPrioLabel")
-        top4_label.setFont(QFont("Inter", 16, QFont.Bold))
+        top4_label.setFont(QFont("Inter", 14, QFont.Bold))
         self.left_layout.addWidget(top4_label)
 
         if df_para_cards.empty:
@@ -195,31 +192,46 @@ class PainelMtec(QMainWindow):
         else:
             for pos_lista, (index, row) in enumerate(df_para_cards.head(4).iterrows(), 1):
                 item_label = QLabel(f"{pos_lista}º (P{row['Prioridade']}): {row['Pedido']}")
-                item_label.setFont(QFont("Inter", 12))
+                item_label.setFont(QFont("Inter", 11))
                 self.left_layout.addWidget(item_label)
-
+        
+        # 2. PENDENTES (Movido para cima)
         pendentes_label = QLabel("PENDENTES")
         pendentes_label.setObjectName("PendenteLabel")
-        pendentes_label.setFont(QFont("Inter", 16, QFont.Bold))
+        pendentes_label.setFont(QFont("Inter", 14, QFont.Bold))
         self.left_layout.addWidget(pendentes_label)
         if df_pendentes.empty:
             self.left_layout.addWidget(QLabel("Nenhum pedido pendente."))
         else:
             for index, row in df_pendentes.iterrows():
                 item_label = QLabel(f"P{row['Prioridade']}: {row['Pedido']}")
-                item_label.setFont(QFont("Inter", 12))
+                item_label.setFont(QFont("Inter", 11))
                 self.left_layout.addWidget(item_label)
-        
+
+        # 3. AGUARDANDO MONTAGEM
         aguardando_label = QLabel("AGUARDANDO MONTAGEM")
         aguardando_label.setObjectName("SectionLabel")
-        aguardando_label.setFont(QFont("Inter", 16, QFont.Bold))
+        aguardando_label.setFont(QFont("Inter", 14, QFont.Bold))
         self.left_layout.addWidget(aguardando_label)
         if df_aguardando.empty:
             self.left_layout.addWidget(QLabel("Nenhum pedido aguardando montagem."))
         else:
             for index, row in df_aguardando.iterrows():
                 item_label = QLabel(f"P{row['Prioridade']}: {row['Pedido']}")
-                item_label.setFont(QFont("Inter", 12))
+                item_label.setFont(QFont("Inter", 11))
+                self.left_layout.addWidget(item_label)
+
+        # 4. AGUARDANDO CHEGADA
+        aguardando_chegada_label = QLabel("AGUARDANDO CHEGADA")
+        aguardando_chegada_label.setObjectName("AguardandoChegadaLabel")
+        aguardando_chegada_label.setFont(QFont("Inter", 14, QFont.Bold))
+        self.left_layout.addWidget(aguardando_chegada_label)
+        if df_aguardando_chegada.empty:
+            self.left_layout.addWidget(QLabel("Nenhum pedido aguardando chegada."))
+        else:
+            for index, row in df_aguardando_chegada.iterrows():
+                item_label = QLabel(f"P{row['Prioridade']}: {row['Pedido']}")
+                item_label.setFont(QFont("Inter", 11))
                 self.left_layout.addWidget(item_label)
         
         self.left_layout.addStretch()
@@ -240,28 +252,27 @@ class PainelMtec(QMainWindow):
         card = QFrame()
         card.setObjectName("Card")
         layout = QVBoxLayout(card)
-        if pd.notna(data['Data Entrega Prorrogada']):
-            data_entrega_str = pd.to_datetime(data['Data Entrega Prorrogada']).strftime('%d/%m/%Y')
-        else:
-            data_entrega_str = "N/A"
-
+        
         texto_titulo = f"{pos_lista}º (P{data['Prioridade']}): {data['Pedido']}"
         titulo = QLabel(texto_titulo)
         titulo.setFont(QFont("Inter", 20, QFont.Bold))
         titulo.setObjectName("TitleLabel")
-        status = QLabel(data['Status'].upper())
+        
+        status_text = str(data.get('Status', 'N/A')).upper()
+        status = QLabel(status_text)
         status.setFont(QFont("Inter", 14, QFont.Bold))
         if data['Status'] == STATUS_AGUARDANDO: status.setStyleSheet("color: #3498DB;")
         elif data['Status'] == STATUS_EM_MONTAGEM: status.setStyleSheet("color: #F39C12;")
-        
-        servico = QLabel(str(data.get('Servico', 'N/A')))
+        elif data['Status'] == STATUS_AGUARDANDO_CHEGADA: status.setStyleSheet("color: #9B59B6;")
+
+        servico_texto = str(data.get('Servico', 'N/A'))
+        servico = QLabel(servico_texto)
         servico.setWordWrap(True)
         servico.setFont(QFont("Inter", 12))
         
         details_grid = QGridLayout()
-        details_grid.addWidget(QLabel(f"<b>Entrega:</b> {data_entrega_str}"), 0, 0)
-        details_grid.addWidget(QLabel(f"<b>Cód. Item:</b> {data.get('CodItem', 'N/A')}"), 1, 0)
-        details_grid.addWidget(QLabel(f"<b>QTD:</b> {data.get('Maquinas', 'N/A')}"), 1, 1)
+        details_grid.addWidget(QLabel(f"<b>Cód. Item:</b> {data.get('CodItem', 'N/A')}"), 0, 0)
+        details_grid.addWidget(QLabel(f"<b>QTD:</b> {int(data.get('Maquinas', 0))}"), 0, 1)
         
         layout.addWidget(titulo)
         layout.addWidget(status)
@@ -273,6 +284,7 @@ class PainelMtec(QMainWindow):
     def mostrar_cancelados(self):
         try:
             df_status_completo = pd.read_excel(CAMINHO_PLANILHA_STATUS)
+            df_status_completo.columns = df_status_completo.columns.str.strip()
             df_cancelados = df_status_completo[df_status_completo[COLUNA_STATUS] == STATUS_CANCELADO]
             dialog = LixeiraDialog(df_cancelados, self)
             dialog.exec()
@@ -298,17 +310,16 @@ class PainelMtec(QMainWindow):
     
     def verificar_atualizacoes(self):
         try:
-            mod_prio_exists = os.path.exists(CAMINHO_PLANILHA_PRIORIDADES)
-            mod_stat_exists = os.path.exists(CAMINHO_PLANILHA_STATUS)
-            if not mod_prio_exists or not mod_stat_exists: return
+            if not os.path.exists(CAMINHO_PLANILHA_STATUS):
+                return
 
-            mod_prio = os.path.getmtime(CAMINHO_PLANILHA_PRIORIDADES)
             mod_stat = os.path.getmtime(CAMINHO_PLANILHA_STATUS)
-            if (self.timestamp_prioridades != 0 and mod_prio != self.timestamp_prioridades) or \
-               (self.timestamp_status != 0 and mod_stat != self.timestamp_status):
-                print("Detecção de mudança nas planilhas. Atualizando...")
+            
+            if self.timestamp_status != 0 and mod_stat != self.timestamp_status:
+                print("Detecção de mudança na planilha de status. Atualizando...")
                 self.forcar_atualizacao()
-            self.timestamp_prioridades, self.timestamp_status = mod_prio, mod_stat
+                
+            self.timestamp_status = mod_stat
         except FileNotFoundError:
             pass
 
@@ -330,9 +341,8 @@ class LixeiraDialog(QDialog):
         if data.empty:
             scroll_layout.addWidget(QLabel("Não há pedidos cancelados."))
         else:
-            # Apenas mostra o Pedido, já que os detalhes estão no outro arquivo
             for index, row in data.iterrows():
-                item_text = f"<b>{row[COLUNA_PEDIDO_ID_STATUS]}</b>"
+                item_text = f"<b>{row.get('Pedido', 'N/A')}</b>"
                 label = QLabel(item_text)
                 label.setWordWrap(True)
                 scroll_layout.addWidget(label)
