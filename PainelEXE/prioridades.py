@@ -106,7 +106,7 @@ def calcular_metricas_dashboard(df_full):
         if not producao_diaria.empty:
             recorde_dia_valor = producao_diaria.max()
             recorde_dia_data_obj = producao_diaria.idxmax()
-            recorde_dia_data = recorde_dia_data_obj.strftime('%d/%m')
+            recorde_dia_data = recorde_dia_data_obj.strftime('%d/%m/%Y')
             recorde_dia_qtd = df_concluidos_mes_atual[pd.to_datetime(df_concluidos_mes_atual[COLUNA_DATA_STATUS]).dt.date == recorde_dia_data_obj][COLUNA_QTD].sum()
 
     return {"total_mes_atual": total_mes_atual_pedidos, "total_mes_atual_qtd": total_mes_atual_qtd, "media_diaria_atual": media_diaria_atual, "media_diaria_qtd": media_diaria_qtd,
@@ -133,8 +133,7 @@ STYLESHEET = """
     #SideColumnFrame { background-color: #252525; border-radius: 8px; } #ErrorLabel { color: #E74C3C; }
     #Card { background-color: #2E2E2E; border: 1px solid #FF6600; border-radius: 8px; padding: 12px; margin-bottom: 10px; }
     #CardTitle { color: #FF8C33; } #CardStatus_Aguardando { color: #3498DB; } #CardStatus_EmMontagem { color: #F39C12; }
-    #TotalLabel { color: #BDBDBD; padding-top: 15px; border-top: 1px solid #444444; margin-top: 10px; }
-    #DashboardFrame { border-top: 1px solid #444; margin-top: 10px; padding: 10px; }
+    #TotalLabel { color: #BDBDBD; margin-top: 10px; }    #DashboardFrame { border-top: 1px solid #444; margin-top: 10px; padding: 10px; }
     #MetricaTitle, #KpiTitle { color: #FFFFFF; font-weight: bold; } #MetricaValue, #KpiValue { color: #FF6600; }
     #FraseMotivacional { color: #DDD; font-style: italic; } #KpiRecorde { color: #3498DB; }
     QProgressBar { border: 1px solid #555; border-radius: 5px; text-align: center; background-color: #2E2E2E; }
@@ -167,11 +166,26 @@ class PainelMtec(QMainWindow):
         self.prioridades_layout = QVBoxLayout(); self.pendentes_layout = QVBoxLayout(); self.aguardando_montagem_layout = QVBoxLayout(); self.aguardando_chegada_layout = QVBoxLayout()
         side_column_frame = QFrame(); side_column_frame.setObjectName("SideColumnFrame"); side_column_frame.setFixedWidth(300)
         self.side_layout = QVBoxLayout(side_column_frame); self.concluidos_layout = QVBoxLayout(); self.cancelados_layout = QVBoxLayout()
-        self.side_layout.addLayout(self.concluidos_layout); self.side_layout.addSpacing(20); self.side_layout.addLayout(self.cancelados_layout); self.side_layout.addStretch()
+        
+        self.side_layout.addLayout(self.concluidos_layout)
+        
+        self.side_layout.addStretch(1)
+
+        linha_separadora = QFrame()
+        linha_separadora.setFrameShape(QFrame.HLine)
+        linha_separadora.setFrameShadow(QFrame.Sunken)
+        linha_separadora.setStyleSheet("background-color: #444; min-height: 1px; border: none;")
+        self.side_layout.addWidget(linha_separadora)
+        self.side_layout.addSpacing(20)
+
+        self.side_layout.addLayout(self.cancelados_layout)
+
+        self.side_layout.addStretch(2)
+        
         self.body_layout.addLayout(self.prioridades_layout, 2); self.body_layout.addLayout(self.aguardando_montagem_layout, 1); self.body_layout.addLayout(self.aguardando_chegada_layout, 1); self.body_layout.addLayout(self.pendentes_layout, 1); self.body_layout.addWidget(side_column_frame)
         self.metricas_layout = QVBoxLayout(); self.grafico_layout = QVBoxLayout(); self.kpi_layout = QVBoxLayout()
         self.dashboard_layout.addLayout(self.metricas_layout, 1); self.dashboard_layout.addLayout(self.grafico_layout, 2); self.dashboard_layout.addStretch(1); self.dashboard_layout.addLayout(self.kpi_layout, 1)
-
+    
     def atualizar_dados_e_ui(self):
         try:
             df_full, df_principal, df_concluidos, df_cancelados, totais_concluidos, totais_cancelados = carregar_dados()
@@ -213,8 +227,11 @@ class PainelMtec(QMainWindow):
                 label = QLabel(texto); label.setFont(font_item); layout.addWidget(label)
             if limit is not None and len(df) > limit:
                 restantes = len(df) - limit; contador_label = QLabel(f"+{restantes}..."); contador_label.setObjectName("CounterLabel"); contador_label.setFont(font_contador); layout.addWidget(contador_label)
+        
         teravix, pv, total, teravix_qtd, pv_qtd, total_qtd = totais
-        texto_total = f"TERAVIX: {teravix} ({teravix_qtd}) | PV: {pv} ({pv_qtd})<br><b>TOTAL DIA: {total} ({total_qtd})</b>"
+        
+        texto_total = f"<font color='#FF6600'>TERAVIX:</font> {teravix} ({teravix_qtd}) | <font color='#FF6600'>PV:</font> {pv} ({pv_qtd})<br><b><font color='#3498DB'>TOTAL DIA:</font></b> <b>{total} ({total_qtd})</b>"
+        
         total_label = QLabel(texto_total); total_label.setObjectName("TotalLabel"); total_label.setFont(font_total); layout.addWidget(total_label)
         layout.addStretch(1)
 
@@ -237,19 +254,23 @@ class PainelMtec(QMainWindow):
             if is_current_week: progress_bar.setObjectName("currentWeek")
             self.grafico_layout.addWidget(label_semana); self.grafico_layout.addWidget(progress_bar)
         self.grafico_layout.addStretch()
-        kpi_titulo_font = QFont("Inter", 12, QFont.Bold); kpi_valor_font = QFont("Inter", 16, QFont.Bold)
+        kpi_titulo_font = QFont("Inter", 12, QFont.Bold); kpi_valor_font = QFont("Inter", 14, QFont.Bold)
         frase_titulo = QLabel("Frase do Dia"); frase_titulo.setObjectName("KpiTitle"); frase_titulo.setFont(kpi_titulo_font)
         frase_texto = QLabel(f'"{frase_do_dia}"'); frase_texto.setObjectName("FraseMotivacional"); frase_texto.setWordWrap(True); frase_texto.setFont(QFont("Inter", 11, italic=True))
         self.kpi_layout.addWidget(frase_titulo); self.kpi_layout.addWidget(frase_texto); self.kpi_layout.addStretch(1)
+
+        # --- ALTERAÇÃO AQUI: Bloco "Comparativo" redesenhado e posicionado antes do "Recorde" ---
+        comp_titulo = QLabel("Comparativo Mensal (Mês Anterior)"); comp_titulo.setObjectName("KpiTitle"); comp_titulo.setFont(kpi_titulo_font)
+        comp_texto_str = (f"📈 <b>Produção Mês:</b> <font size='+2' color='#FF6600'>{metricas['total_mes_atual']:.0f}</font> (vs. {metricas['total_mes_anterior']:.0f})<br>"
+                          f"📊 <b>Média Diária:</b> <font size='+2' color='#FF6600'>{metricas['media_diaria_atual']:.1f}</font> (vs. {metricas['media_diaria_anterior']:.1f})")
+        comp_texto = QLabel(comp_texto_str); comp_texto.setFont(QFont("Inter", 11))
+        self.kpi_layout.addWidget(comp_titulo); self.kpi_layout.addWidget(comp_texto); self.kpi_layout.addStretch(2)
+        
+        # --- ALTERAÇÃO AQUI: Bloco "Recorde" posicionado depois ---
         recorde_titulo = QLabel("Recorde de Produção do Mês"); recorde_titulo.setObjectName("KpiTitle"); recorde_titulo.setFont(kpi_titulo_font)
         recorde_texto = QLabel(f"🏆 <font color='#3498DB'>{metricas['recorde_dia_valor']} pedidos ({metricas['recorde_dia_qtd']} máq.)</font> em {metricas['recorde_dia_data']}"); recorde_texto.setFont(kpi_valor_font)
         self.kpi_layout.addWidget(recorde_titulo); self.kpi_layout.addWidget(recorde_texto); self.kpi_layout.addStretch(1)
-        comp_titulo = QLabel("Comparativo Mensal"); comp_titulo.setObjectName("KpiTitle"); comp_titulo.setFont(kpi_titulo_font)
-        comp_texto_str = (f"Produção (Mês Atual): <b>{metricas['total_mes_atual']:.0f}</b> (vs. {metricas['total_mes_anterior']:.0f} Mês Anterior)<br>"
-                          f"Média Diária (Mês Atual): <b>{metricas['media_diaria_atual']:.1f}</b> (vs. {metricas['media_diaria_anterior']:.1f} Mês Anterior)")
-        comp_texto = QLabel(comp_texto_str); comp_texto.setFont(QFont("Inter", 11))
-        self.kpi_layout.addWidget(comp_titulo); self.kpi_layout.addWidget(comp_texto); self.kpi_layout.addStretch(2)
-
+    
     def limpar_layout(self, layout):
         if layout is None: return
         while layout.count():
@@ -304,10 +325,20 @@ class PainelMtec(QMainWindow):
     def clear_error_message(self):
         self.is_showing_error = False; self.error_container.hide(); self.main_container.show(); self.setup_ui_columns()
 
+    def keyPressEvent(self, event):
+        """Este método especial é chamado sempre que uma tecla é pressionada."""
+        if event.key() == Qt.Key_F11:
+            if self.isFullScreen():
+                self.showMaximized()
+            else:
+                self.showFullScreen()
+        
+        super().keyPressEvent(event)
+
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     try: locale.setlocale(locale.LC_ALL, 'pt_BR.UTF-8')
     except locale.Error: print("Aviso: Local 'pt_BR.UTF-8' não pôde ser definido.")
     window = PainelMtec()
-    window.showMaximized()
+    window.showFullScreen()
     sys.exit(app.exec())
